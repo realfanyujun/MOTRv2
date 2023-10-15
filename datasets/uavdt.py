@@ -54,7 +54,7 @@ class DetMOTDetection:
                     continue
                 gt_path = os.path.join(self.mot_path, vid, 'gt', 'gt.txt')
                 for l in open(gt_path):
-                    t, i, *xywh, outofview, occlusion, label = l.strip().split(',')[:8]
+                    t, i, *xywh, outofview, occlusion, label = l.strip().split(',')
                     t, i, outofview, occlusion, label = map(int, (t, i, outofview, occlusion, label))
                     #if mark == 0:
                      #   continue
@@ -185,14 +185,16 @@ class DetMOTDetection:
             targets['labels'].append(0)
             targets['obj_ids'].append(id + obj_idx_offset)
             targets['scores'].append(1.)
-        '''
-        txt_key = os.path.join(vid, 'img1', f'{idx:08d}.txt')
-        for line in self.det_db[txt_key]:
-            *box, s = map(float, line.split(','))
-            targets['boxes'].append(box)
-            targets['scores'].append(s)
-		'''
-		targets['iscrowd'] = torch.as_tensor(targets['iscrowd'])
+        
+        txt_key = os.path.join(self.mot_path, vid, f'img{idx:06d}.txt')
+        if txt_key in self.det_db:
+			
+            for line in self.det_db[txt_key]:
+                *box, s = map(float, line.split(','))
+                targets['boxes'].append(box)
+                targets['scores'].append(s)
+		
+        targets['iscrowd'] = torch.as_tensor(targets['iscrowd'])
         targets['labels'] = torch.as_tensor(targets['labels'])
         targets['obj_ids'] = torch.as_tensor(targets['obj_ids'], dtype=torch.float64)
         targets['scores'] = torch.as_tensor(targets['scores'])

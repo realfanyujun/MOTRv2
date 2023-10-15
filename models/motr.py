@@ -458,23 +458,23 @@ class MOTR(nn.Module):
 
     def _generate_empty_tracks(self, proposals=None):
         track_instances = Instances((1, 1))
-        num_queries, d_model = self.query_embed.weight.shape  # (300, 512)
+        num_queries, d_model = self.query_embed.weight.shape  # (num_queries, dmodel)
         device = self.query_embed.weight.device
         if proposals is None:
-            track_instances.ref_pts = self.position.weight
-            track_instances.query_pos = self.query_embed.weight
+            track_instances.ref_pts = self.position.weight  # (num_queries, 4),每个query初始化一个参考点
+            track_instances.query_pos = self.query_embed.weight  # (num_queries, dmodel)
         else:
-            track_instances.ref_pts = torch.cat([self.position.weight, proposals[:, :4]])
-            track_instances.query_pos = torch.cat([self.query_embed.weight, pos2posemb(proposals[:, 4:], d_model) + self.yolox_embed.weight])
-        track_instances.output_embedding = torch.zeros((len(track_instances), d_model), device=device)
-        track_instances.obj_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)
-        track_instances.matched_gt_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)
-        track_instances.disappear_time = torch.zeros((len(track_instances), ), dtype=torch.long, device=device)
-        track_instances.iou = torch.ones((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.track_scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)
-        track_instances.pred_boxes = torch.zeros((len(track_instances), 4), dtype=torch.float, device=device)
-        track_instances.pred_logits = torch.zeros((len(track_instances), self.num_classes), dtype=torch.float, device=device)
+            track_instances.ref_pts = torch.cat([self.position.weight, proposals[:, :4]])# (num_queries + num_proposals, 4)
+            track_instances.query_pos = torch.cat([self.query_embed.weight, pos2posemb(proposals[:, 4:], d_model) + self.yolox_embed.weight])# (num_queries + num_proposals, dmodel)
+        track_instances.output_embedding = torch.zeros((len(track_instances), d_model), device=device)#(num_queries, dmodel),全部为0
+        track_instances.obj_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)#(num_queries, ),全部为-1
+        track_instances.matched_gt_idxes = torch.full((len(track_instances),), -1, dtype=torch.long, device=device)#(num_queries, ),全部为-1
+        track_instances.disappear_time = torch.zeros((len(track_instances), ), dtype=torch.long, device=device)#(num_queries, ),全部为0
+        track_instances.iou = torch.ones((len(track_instances),), dtype=torch.float, device=device)#(num_queries, ),全部为1
+        track_instances.scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)#(num_queries, ),全部为0
+        track_instances.track_scores = torch.zeros((len(track_instances),), dtype=torch.float, device=device)#(num_queries, ),全部为0
+        track_instances.pred_boxes = torch.zeros((len(track_instances), 4), dtype=torch.float, device=device)#(num_queries, 4),全部为0
+        track_instances.pred_logits = torch.zeros((len(track_instances), self.num_classes), dtype=torch.float, device=device)#(num_queries, num_classes),全部为0
 
         mem_bank_len = self.mem_bank_len
         track_instances.mem_bank = torch.zeros((len(track_instances), mem_bank_len, d_model), dtype=torch.float32, device=device)
@@ -522,12 +522,12 @@ class MOTR(nn.Module):
                 pos.append(pos_l)
 
         if gtboxes is not None:
-            n_dt = len(track_instances)
-            ps_tgt = self.refine_embed.weight.expand(gtboxes.size(0), -1)
-            query_embed = torch.cat([track_instances.query_pos, ps_tgt])
-            ref_pts = torch.cat([track_instances.ref_pts, gtboxes])
+            n_dt = len(track_instances)#num_query + num_proposal
+            ps_tgt = self.refine_embed.weight.expand(gtboxes.size(0), -1)#nn.Embedding(1, hidden_dim) -> (num_gts, hidden_dim)
+            query_embed = torch.cat([track_instances.query_pos, ps_tgt])# (num_queries + num_proposals + num_gts, dmodel)
+            ref_pts = torch.cat([track_instances.ref_pts, gtboxes])# (num_queries + num_proposals + num_gts, 4)
             attn_mask = torch.zeros((len(ref_pts), len(ref_pts)), dtype=bool, device=ref_pts.device)
-            attn_mask[:n_dt, n_dt:] = True
+            attn_mask[:n_dt, n_dt:] = True#num_query + num_proposal对应gt部分的attn_mask = True
         else:
             query_embed = track_instances.query_pos
             ref_pts = track_instances.ref_pts
@@ -639,6 +639,7 @@ class MOTR(nn.Module):
         if self.training:
             self.criterion.initialize_for_single_clip(data['gt_instances'])
         frames = data['imgs']  # list of Tensor.
+
         outputs = {
             'pred_logits': [],
             'pred_boxes': [],
@@ -652,14 +653,14 @@ class MOTR(nn.Module):
             if self.query_denoise > 0:
                 l_1 = l_2 = self.query_denoise
                 gtboxes = gt.boxes.clone()
-                _rs = torch.rand_like(gtboxes) * 2 - 1
-                gtboxes[..., :2] += gtboxes[..., 2:] * _rs[..., :2] * l_1
-                gtboxes[..., 2:] *= 1 + l_2 * _rs[..., 2:]
+                _rs = torch.rand_like(gtboxes) * 2 - 1#-1到1之间
+                gtboxes[..., :2] += gtboxes[..., 2:] * _rs[..., :2] * l_1#x+ (-1到1之间的随机数)*w, 再* 0.05。即xy坐标在bbox内随机移动，虽然移动范围限制在0.05w，0.05h内
+                gtboxes[..., 2:] *= 1 + l_2 * _rs[..., 2:]#wh随机放大缩小，最多是1+/- 0.05倍
             else:
                 gtboxes = None
 
             if track_instances is None:
-                track_instances = self._generate_empty_tracks(proposals)
+                track_instances = self._generate_empty_tracks(proposals)#把yolox proposal和det query一起保存在一个track_instance中，输入transformer
             else:
                 track_instances = Instances.cat([
                     self._generate_empty_tracks(proposals),
@@ -668,7 +669,7 @@ class MOTR(nn.Module):
             if self.use_checkpoint and frame_index < len(frames) - 1:
                 def fn(frame, gtboxes, *args):
                     frame = nested_tensor_from_tensor_list([frame])
-                    tmp = Instances((1, 1), **dict(zip(keys, args)))
+                    tmp = Instances((1, 1), **dict(zip(keys, args)))#把yolox proposal和det query的信息转移到tmp instance中
                     frame_res = self._forward_single_image(frame, tmp, gtboxes)
                     return (
                         frame_res['pred_logits'],

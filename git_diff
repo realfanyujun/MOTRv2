@@ -1,0 +1,141 @@
+diff --git a/configs/motrv2.args b/configs/motrv2.args
+index 78b64be..98fd1c5 100644
+--- a/configs/motrv2.args
++++ b/configs/motrv2.args
+@@ -2,13 +2,13 @@
+ --dataset_file uavdt
+ --mot_path /mnt/data2/UAVDT/vid
+ --data_txt_path_train /mnt/data2/UAVDT/GT/train
+---epoch 5
++--det_db /home/fan/Documents/GeanyProject/ByteTrackInference/det_db_0.json
++--epoch 20
+ --with_box_refine
+ --lr_drop 4
+ --lr 2e-4
+ --lr_backbone 2e-5
+---pretrained /home/fan/Documents/GeanyProject/MOTRv2/models/r50+bbox_refine.pth
+---batch_size 2
++--batch_size 1
+ --sample_mode random_interval
+ --sample_interval 10
+ --sampler_lengths 5
+diff --git a/datasets/__init__.py b/datasets/__init__.py
+index 6aa1fce..207fde5 100755
+--- a/datasets/__init__.py
++++ b/datasets/__init__.py
+@@ -19,5 +19,5 @@ def build_dataset(image_set, args):
+     if args.dataset_file == 'e2e_dance':
+         return build_e2e_dance(image_set, args)
+     if args.dataset_file == 'uavdt':
+-		return build_uavdt(image_set, args)
++        return build_uavdt(image_set, args)
+     raise ValueError(f'dataset {args.dataset_file} not supported')
+diff --git a/datasets/uavdt.py b/datasets/uavdt.py
+index 33ed868..3c8aedb 100644
+--- a/datasets/uavdt.py
++++ b/datasets/uavdt.py
+@@ -54,7 +54,7 @@ class DetMOTDetection:
+                     continue
+                 gt_path = os.path.join(self.mot_path, vid, 'gt', 'gt.txt')
+                 for l in open(gt_path):
+-                    t, i, *xywh, outofview, occlusion, label = l.strip().split(',')[:8]
++                    t, i, *xywh, outofview, occlusion, label = l.strip().split(',')
+                     t, i, outofview, occlusion, label = map(int, (t, i, outofview, occlusion, label))
+                     #if mark == 0:
+                      #   continue
+@@ -185,14 +185,16 @@ class DetMOTDetection:
+             targets['labels'].append(0)
+             targets['obj_ids'].append(id + obj_idx_offset)
+             targets['scores'].append(1.)
+-        '''
+-        txt_key = os.path.join(vid, 'img1', f'{idx:08d}.txt')
+-        for line in self.det_db[txt_key]:
+-            *box, s = map(float, line.split(','))
+-            targets['boxes'].append(box)
+-            targets['scores'].append(s)
+-		'''
+-		targets['iscrowd'] = torch.as_tensor(targets['iscrowd'])
++        
++        txt_key = os.path.join(self.mot_path, vid, f'img{idx:06d}.txt')
++        if txt_key in self.det_db:
++			
++            for line in self.det_db[txt_key]:
++                *box, s = map(float, line.split(','))
++                targets['boxes'].append(box)
++                targets['scores'].append(s)
++		
++        targets['iscrowd'] = torch.as_tensor(targets['iscrowd'])
+         targets['labels'] = torch.as_tensor(targets['labels'])
+         targets['obj_ids'] = torch.as_tensor(targets['obj_ids'], dtype=torch.float64)
+         targets['scores'] = torch.as_tensor(targets['scores'])
+diff --git a/main.py b/main.py
+index 13859a8..84f075a 100755
+--- a/main.py
++++ b/main.py
+@@ -44,7 +44,7 @@ def get_args_parser():
+     parser.add_argument('--clip_max_norm', default=0.1, type=float,
+                         help='gradient clipping max norm')
+ 
+-    parser.add_argument('--meta_arch', default='deformable_detr', type=str)
++    parser.add_argument('--meta_arch', default='motr', type=str)
+ 
+     parser.add_argument('--sgd', action='store_true')
+ 
+diff --git a/models/__init__.py b/models/__init__.py
+index c621adc..1cda10f 100755
+--- a/models/__init__.py
++++ b/models/__init__.py
+@@ -14,6 +14,7 @@ def build_model(args):
+     arch_catalog = {
+         'motr': build_motr,
+     }
++    #print(args.meta_arch)
+     assert args.meta_arch in arch_catalog, 'invalid arch: {}'.format(args.meta_arch)
+     build_func = arch_catalog[args.meta_arch]
+     return build_func(args)
+diff --git a/models/motr.py b/models/motr.py
+index d143db3..ec2f244 100644
+--- a/models/motr.py
++++ b/models/motr.py
+@@ -639,6 +639,7 @@ class MOTR(nn.Module):
+         if self.training:
+             self.criterion.initialize_for_single_clip(data['gt_instances'])
+         frames = data['imgs']  # list of Tensor.
++
+         outputs = {
+             'pred_logits': [],
+             'pred_boxes': [],
+diff --git a/tools/batch_diff.py b/tools/batch_diff.py
+old mode 100644
+new mode 100755
+diff --git a/tools/make_detdb.py b/tools/make_detdb.py
+old mode 100644
+new mode 100755
+diff --git a/tools/merge_dance_tracklets.py b/tools/merge_dance_tracklets.py
+old mode 100644
+new mode 100755
+diff --git a/tools/merge_dance_tracklets.sh b/tools/merge_dance_tracklets.sh
+old mode 100644
+new mode 100755
+diff --git a/tools/train.sh b/tools/train.sh
+index 9ec78b4..f7d04b7 100755
+--- a/tools/train.sh
++++ b/tools/train.sh
+@@ -13,7 +13,7 @@ set -o pipefail
+ OUTPUT_BASE=$(echo $1 | sed -e "s/configs/exps/g" | sed -e "s/.args$//g")
+ mkdir -p $OUTPUT_BASE
+ #从1到100,创建100个run文件夹
+-for RUN in $(seq 100); do
++for RUN in $(seq 1); do
+   ls $OUTPUT_BASE | grep run$RUN && continue
+   OUTPUT_DIR=$OUTPUT_BASE/run$RUN
+   #exps/motrv2/run1
+@@ -52,4 +52,4 @@ git diff > git_diff
+ echo $PY_ARGS > desc
+ echo " ...Done"
+ 
+-python -m torch.distributed.launch --nproc_per_node=8 --use_env main.py ${args} --output_dir . |& tee -a output.log
++python main.py ${args} --output_dir . |& tee -a output.log
+diff --git a/tools/visualize.py b/tools/visualize.py
+old mode 100644
+new mode 100755

@@ -13,7 +13,7 @@ set -o pipefail
 OUTPUT_BASE=$(echo $1 | sed -e "s/configs/exps/g" | sed -e "s/.args$//g")
 mkdir -p $OUTPUT_BASE
 #从1到100,创建100个run文件夹
-for RUN in $(seq 100); do
+for RUN in $(seq 1); do
   ls $OUTPUT_BASE | grep run$RUN && continue
   OUTPUT_DIR=$OUTPUT_BASE/run$RUN
   #exps/motrv2/run1
@@ -52,4 +52,4 @@ git diff > git_diff
 echo $PY_ARGS > desc
 echo " ...Done"
 
-python -m torch.distributed.launch --nproc_per_node=8 --use_env main.py ${args} --output_dir . |& tee -a output.log
+python main.py ${args} --output_dir . |& tee -a output.log

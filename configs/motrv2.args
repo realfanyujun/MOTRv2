@@ -2,13 +2,13 @@
 --dataset_file uavdt
 --mot_path /mnt/data2/UAVDT/vid
 --data_txt_path_train /mnt/data2/UAVDT/GT/train
---epoch 5
+--det_db /home/fan/Documents/GeanyProject/ByteTrackInference/det_db_0.json
+--epoch 20
 --with_box_refine
 --lr_drop 4
 --lr 2e-4
 --lr_backbone 2e-5
---pretrained /home/fan/Documents/GeanyProject/MOTRv2/models/r50+bbox_refine.pth
---batch_size 2
+--batch_size 1
 --sample_mode random_interval
 --sample_interval 10
 --sampler_lengths 5

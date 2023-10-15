@@ -44,7 +44,7 @@ def get_args_parser():
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
 
-    parser.add_argument('--meta_arch', default='deformable_detr', type=str)
+    parser.add_argument('--meta_arch', default='motr', type=str)
 
     parser.add_argument('--sgd', action='store_true')
 
