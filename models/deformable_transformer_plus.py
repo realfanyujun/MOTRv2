@@ -174,7 +174,7 @@ class DeformableTransformer(nn.Module):
             pos_trans_out = self.pos_trans_norm(self.pos_trans(self.get_proposal_pos_embed(topk_coords_unact)))
             query_embed, tgt = torch.split(pos_trans_out, c, dim=2)
         else:
-            tgt = query_embed.unsqueeze(0).expand(bs, -1, -1)
+            tgt = query_embed.unsqueeze(0).expand(bs, -1, -1)#(bs, num_queries + num_proposals + num_gts, dmodel) yolox的proposals和gt一起作为tgt
             reference_points = ref_pts.unsqueeze(0).expand(bs, -1, -1)
             init_reference_out = reference_points
         # decoder
@@ -342,7 +342,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
         q = k = self.with_pos_embed(tgt, query_pos)
         if attn_mask is not None:
             tgt2 = self.self_attn(q.transpose(0, 1), k.transpose(0, 1), tgt.transpose(0, 1),
-                                  attn_mask=attn_mask)[0].transpose(0, 1)
+                                  attn_mask=attn_mask)[0].transpose(0, 1)##num_query + num_proposal对应gt部分的attn_mask = True, 即num_query和yolo_proposal不吸收gt的tgt，但gt的tgt会根据相关性吸收所有tgt信息
         else:
             tgt2 = self.self_attn(q.transpose(0, 1), k.transpose(0, 1), tgt.transpose(0, 1))[0].transpose(0, 1)
         tgt = tgt + self.dropout2(tgt2)

@@ -566,8 +566,8 @@ class MOTR(nn.Module):
 
     def _post_process_single_image(self, frame_res, track_instances, is_last):
         if self.query_denoise > 0:
-            n_ins = len(track_instances)
-            ps_logits = frame_res['pred_logits'][:, n_ins:]
+            n_ins = len(track_instances)#num_query + num_proposal
+            ps_logits = frame_res['pred_logits'][:, n_ins:]#gt对应tgt的预测
             ps_boxes = frame_res['pred_boxes'][:, n_ins:]
             frame_res['hs'] = frame_res['hs'][:, :n_ins]
             frame_res['pred_logits'] = frame_res['pred_logits'][:, :n_ins]
@@ -689,7 +689,7 @@ class MOTR(nn.Module):
                     'aux_outputs': [{
                         'pred_logits': tmp[3+i],
                         'pred_boxes': tmp[3+5+i],
-                    } for i in range(5)],
+                    } for i in range(5)],#TODO: 这里的5是因为一共6层DECODER LAYER
                 }
             else:
                 frame = nested_tensor_from_tensor_list([frame])
